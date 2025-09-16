@@ -1,12 +1,34 @@
 #include "../headers/main.hpp"
 
-
 float vertices[] = {
     // positions        // colors
      0.0f,  0.5f, 0.0f,  1.0f, 0.0f, 0.0f,  // top, red
     -0.5f, -0.5f, 0.0f,  0.0f, 1.0f, 0.0f,  // bottom left, green
      0.5f, -0.5f, 0.0f,  0.0f, 0.0f, 1.0f   // bottom right, blue
 };
+
+QEModelBuffer createVAO(float* vertices, size_t size) {
+    QEModelBuffer buf{};
+    glGenVertexArrays(1, &buf.VAO);
+    glGenBuffers(1, &buf.VBO);
+
+    glBindVertexArray(buf.VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, buf.VBO);
+    glBufferData(GL_ARRAY_BUFFER, size, vertices, GL_STATIC_DRAW);
+
+    // position
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    // color
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    return buf;
+}
 
 int main() {
     if (!SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO)) {
@@ -38,14 +60,22 @@ int main() {
         return 1;
     }
 
+    if (glewInit() != GLEW_OK) {
+        SDL_Log("Failed to initialize GLEW");
+        return 1;
+    }
+
     // Enable VSync (optional)
     SDL_GL_SetSwapInterval(1);
+
+    // Setup triangle + shader
+    QEModelBuffer triangle = createVAO(vertices, sizeof(vertices));
+    GLuint shaderProgram = createShaderProgram("shaders/vert.glsl", "shaders/frag.glsl");
 
     // --- Main loop ---
     bool running = true;
     SDL_Event event;
     while (running) {
-        // Event handling
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
                 case SDL_EVENT_QUIT:
@@ -62,9 +92,8 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT);
 
         glUseProgram(shaderProgram);
-        glBindVertexArray(VAO);
+        glBindVertexArray(triangle.VAO);
         glDrawArrays(GL_TRIANGLES, 0, 3);
-        glBindVertexArray(0);
 
         SDL_GL_SwapWindow(window);
     }
