@@ -104,7 +104,7 @@ class Engine {
 
         inline int init() {
             // 1. Initialize SDL
-            if (!SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO) != 0) {
+            if (!SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO)) {
                 SDL_Log("SDL_Init Error: %s", SDL_GetError());
                 return 1;
             }
@@ -119,35 +119,63 @@ class Engine {
 
             // 3. Create window and context
             this->window = SDL_CreateWindow("Game window", 800, 600, SDL_WINDOW_OPENGL);
-            if (!this->window) { SDL_Log("SDL_CreateWindow Error: %s", SDL_GetError()); return 1; }
-
-            this->glContext = SDL_GL_CreateContext(this->window);
-            if (!this->glContext) { SDL_Log("SDL_GL_CreateContext Error: %s", SDL_GetError()); return 1; }
-
-            // 4. Initialize GLEW
-            glewExperimental = GL_TRUE;
-            if (glewInit() != GLEW_OK) {
-                SDL_Log("Failed to initialize GLEW");
+            if (!this->window) {
+                SDL_Log("SDL_CreateWindow Error: %s", SDL_GetError());
                 return 1;
             }
 
+            this->glContext = SDL_GL_CreateContext(this->window);
+            if (!this->glContext) {
+                SDL_Log("SDL_GL_CreateContext Error: %s", SDL_GetError());
+                SDL_DestroyWindow(this->window);
+                return 1;
+            }
+
+            // Ensure the context is current on this thread
+            if (SDL_GL_MakeCurrent(this->window, this->glContext) < 0) {
+                SDL_Log("SDL_GL_MakeCurrent Error: %s", SDL_GetError());
+                SDL_GL_DestroyContext(this->glContext);
+                SDL_DestroyWindow(this->window);
+                return 1;
+            }
+
+            // 4. Initialize GLEW
+            glewExperimental = GL_TRUE;
+            GLenum glewRes = glewInit();
+            if (glewRes != GLEW_OK) {
+                SDL_Log("glewInit failed: %s", glewGetErrorString(glewRes));
+                SDL_GL_DestroyContext(this->glContext);
+                SDL_DestroyWindow(this->window);
+                return 1;
+            }
+
+            // 5. Probe GL and some function pointers (debugging)
             const GLubyte* version = glGetString(GL_VERSION);
             if (!version) {
-                SDL_Log("Failed to query OpenGL version string");
+                SDL_Log("glGetString(GL_VERSION) returned NULL — GL functions not available");
                 return 1;
             }
             SDL_Log("OpenGL Version: %s", version);
 
-            // 5. Dummy OpenGL call to ensure function pointers are loaded
-            glGetError();
-            glGetString(GL_VERSION); 
+            // Optional: print addresses of a couple of GL function pointers to make sure they are not null
+            SDL_Log("glCreateShader = %p", (void*)glCreateShader);
+            SDL_Log("glShaderSource = %p", (void*)glShaderSource);
+            SDL_Log("glCompileShader = %p", (void*)glCompileShader);
+            SDL_Log("glCreateProgram = %p", (void*)glCreateProgram);
+            SDL_Log("glLinkProgram = %p", (void*)glLinkProgram);
 
-            // 6. Create shaders and use program
-            this->shaderProgram = createShaderProgram("shaders/vert.glsl", "shaders/frag.glsl");
-            //glUseProgram(createShaderProgram("shaders/vert.glsl", "shaders/frag.glsl"));
+            // 6. Create shaders and program (now safe)
+            try {
+                this->shaderProgram = createShaderProgram("shaders/vert.glsl", "shaders/frag.glsl");
+            } catch (const std::exception &e) {
+                SDL_Log("Shader creation failed: %s", e.what());
+                return 1;
+            }
 
             // 7. Optional: VSync
-            //SDL_GL_SetSwapInterval(1);
+            SDL_GL_SetSwapInterval(1);
+
+            return 0;
         }
 
         inline int update(float* vertices, size_t vertex_size) {
@@ -168,6 +196,8 @@ class Engine {
                             break;
                     }
                 }
+
+                glUseProgram(this->shaderProgram);
 
                 glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
                 glClear(GL_COLOR_BUFFER_BIT);
